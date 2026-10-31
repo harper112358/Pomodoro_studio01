@@ -23,7 +23,7 @@
 const {useState,useEffect,useRef}=React;
 const KEY='pomodoro-studio-single-v1';
 const DEFAULT={focus:25,short:5,long:15,cycles:4,autoStart:false,countdownSound:true,bg:'#17231d',accent:'#b8cba9',text:'#e8eee7',image:'',video:'',overlay:55,blur:0,master:70,font:'DM Sans',fontSize:16,timerFont:'Playfair Display',timerColor:'#e8eee7',gradient:false};
-const AMBIENTS=['Rain','Thunder','Wind','Ocean','Waterfall','Birds','Library','Café','Fireplace','Train','City'];
+const AMBIENTS=['Rain','Thunder','Wind','Ocean','Waterfall','Birds','Library','Café','Fireplace','Train','City','Lofi'];
 const NOISES=['White Noise','Pink Noise','Brown Noise'];
 const uid=()=>crypto.randomUUID?crypto.randomUUID():String(Date.now()+Math.random());
 function readSaved(){try{return JSON.parse(localStorage.getItem(KEY)||'{}')}catch{return {}}}

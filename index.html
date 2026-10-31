@@ -56,7 +56,20 @@ function App(){
  const audioCtx=useRef(null),masterGain=useRef(null),nodes=useRef({}),sources=useRef({}),elements=useRef({}),finishGuard=useRef(false),lastCountdownSecond=useRef(null);
  // Persistent media host is attached directly to <body>, outside React's managed tree.
  // This prevents conditional page rendering/reconciliation from touching active media elements.
- useEffect(()=>{let host=window.__POMODORO_AUDIO_HOST__;if(!host){host=document.createElement('div');host.id='pomodoro-audio-host';host.setAttribute('aria-hidden','true');host.style.cssText='position:fixed;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);pointer-events:none;left:-10px;top:-10px';document.body.appendChild(host);window.__POMODORO_AUDIO_HOST__=host;}const live=new Set();for(const t of tracks){if(t.kind==='noise'||!t.src)continue;live.add(t.id);let el=elements.current[t.id];if(!el){el=document.createElement('audio');el.loop=true;el.preload='auto';el.playsInline=true;el.setAttribute('playsinline','');el.dataset.trackId=t.id;host.appendChild(el);elements.current[t.id]=el;}const nextUrl=new URL(t.src,document.baseURI).href;if(el.src!==nextUrl){const wasPlaying=!el.paused;el.src=nextUrl;el.load();if(wasPlaying){const resume=()=>el.play().catch(()=>{});if(el.readyState>=2)resume();else el.addEventListener('canplay',resume,{once:true});}}}for(const id of Object.keys(elements.current)){if(!live.has(id)){const el=elements.current[id];el.pause();el.removeAttribute('src');el.load();el.remove();delete elements.current[id];}}},[tracks]);
+ useEffect(()=>{let host=window.__POMODORO_AUDIO_HOST__;if(!host){host=document.createElement('div');host.id='pomodoro-audio-host';host.setAttribute('aria-hidden','true');host.style.cssText='position:fixed;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);pointer-events:none;left:-10px;top:-10px';document.body.appendChild(host);window.__POMODORO_AUDIO_HOST__=host;}const live=new Set();for(const t of tracks){if(t.kind==='noise'||!t.src)continue;live.add(t.id);let el=elements.current[t.id];if(!el){el=document.createElement('audio');el.loop=true;el.preload='auto';el.playsInline=true;el.setAttribute('playsinline','');el.dataset.trackId = t.id;el.volume = Math.max(
+  0,
+  Math.min(1, (t.muted ? 0 : t.volume / 100) * (master / 100))
+);
+host.appendChild(el);
+elements.current[t.id] = el;
+}
+
+el.volume = Math.max(
+  0,
+  Math.min(1, (t.muted ? 0 : t.volume / 100) * (master / 100))
+);
+
+const nextUrl=new URL(t.src,document.baseURI).href;if(el.src!==nextUrl){const wasPlaying=!el.paused;el.src=nextUrl;el.load();if(wasPlaying){const resume=()=>el.play().catch(()=>{});if(el.readyState>=2)resume();else el.addEventListener('canplay',resume,{once:true});}}}for(const id of Object.keys(elements.current)){if(!live.has(id)){const el=elements.current[id];el.pause();el.removeAttribute('src');el.load();el.remove();delete elements.current[id];}}},[tracks,master]);
  const configRef=useRef(config),sessionRef=useRef(session),cycleRef=useRef(cycle);
  useEffect(()=>{configRef.current=config},[config]);useEffect(()=>{sessionRef.current=session},[session]);useEffect(()=>{cycleRef.current=cycle},[cycle]);
  useEffect(()=>{localStorage.setItem(KEY,JSON.stringify({config,tracks:tracks.map(t=>({...t,src:t.kind==='file'?null:t.src})),presets,attributions,timer:{session,cycle,remaining,running,deadline}}))},[config,tracks,presets,attributions,session,cycle,remaining,running,deadline]);
@@ -75,8 +88,70 @@ function App(){
  const getNode=id=>{const ctx=getCtx();if(!nodes.current[id]){const n=ctx.createGain();n.connect(masterGain.current);nodes.current[id]=n}return nodes.current[id]};
  const addNoise=type=>{const id=uid();const t={id,name:type,kind:'noise',noiseType:type,volume:35,muted:false,license:'Procedurally generated noise (not AI)',creator:'Pomodoro Studio',source:'Built-in Web Audio oscillator/buffer'};setTracks(p=>[...p,t]);try{playNoise(t)}catch(e){setNotice(e.message)}};
  const playNoise=t=>{const ctx=getCtx();if(ctx.state!=='running')ctx.resume().catch(()=>{});if(sources.current[t.id]){sources.current[t.id].stop();delete sources.current[t.id];return}const length=ctx.sampleRate*4,b=ctx.createBuffer(1,length,ctx.sampleRate),d=b.getChannelData(0);let a=0,brown=0;for(let i=0;i<length;i++){const w=Math.random()*2-1;if(t.noiseType==='White Noise')d[i]=w;else if(t.noiseType==='Pink Noise'){a=.97*a+.03*w;d[i]=a*2.5}else{a=.98*a+.02*w;brown=(brown+.02*a)/1.02;d[i]=brown*4}}const src=ctx.createBufferSource();src.buffer=b;src.loop=true;src.connect(getNode(t.id));getNode(t.id).gain.value=t.muted?0:t.volume/100;src.start();sources.current[t.id]=src};
- const playTrack=async t=>{if(t.kind==='noise'){try{const ctx=getCtx();if(ctx.state!=='running')await ctx.resume();playNoise(t)}catch(e){setNotice('Audio engine could not resume: '+e.message)}return}const el=elements.current[t.id];if(!el){setNotice('Audio is still loading. Wait a moment, then press Play again.');return}try{const ctx=getCtx();if(ctx.state!=='running')await ctx.resume();if(!el._connected){const source=ctx.createMediaElementSource(el);source.connect(getNode(t.id));el._connected=true}getNode(t.id).gain.value=t.muted?0:t.volume/100;if(el.paused){await el.play();setNotice('')}else{el.pause()}}catch(e){setNotice('Playback failed: '+e.message+'. Check the preview URL, browser permission and CORS support.')}};
- const updateTrack=(id,patch)=>{setTracks(p=>p.map(t=>t.id===id?{...t,...patch}:t));const t=tracks.find(x=>x.id===id);if(nodes.current[id])nodes.current[id].gain.value=(patch.muted??t?.muted)?0:(patch.volume??t?.volume??0)/100};
+ 
+const playTrack = async t => {
+  if (t.kind === 'noise') {
+    try {
+      const ctx = getCtx();
+      if (ctx.state !== 'running') await ctx.resume();
+      playNoise(t);
+    } catch (e) {
+      setNotice('Audio engine could not resume: ' + e.message);
+    }
+    return;
+  }
+
+  const el = elements.current[t.id];
+
+  if (!el) {
+    setNotice('Audio is still loading. Wait a moment, then press Play again.');
+    return;
+  }
+
+  try {
+    el.volume = Math.max(
+      0,
+      Math.min(1, (t.muted ? 0 : t.volume / 100) * (master / 100))
+    );
+
+    if (el.paused) {
+      await el.play();
+      setNotice('');
+    } else {
+      el.pause();
+    }
+  } catch (e) {
+    setNotice('Playback failed: ' + e.message);
+  }
+};
+
+const updateTrack = (id, patch) => {
+  setTracks(p =>
+    p.map(t =>
+      t.id === id ? { ...t, ...patch } : t
+    )
+  );
+
+  const t = tracks.find(x => x.id === id);
+  const el = elements.current[id];
+
+  if (el && t) {
+    const next = { ...t, ...patch };
+
+    el.volume = Math.max(
+      0,
+      Math.min(1, (next.muted ? 0 : next.volume / 100) * (master / 100))
+    );
+  }
+
+  if (nodes.current[id]) {
+    nodes.current[id].gain.value =
+      (patch.muted ?? t?.muted)
+        ? 0
+        : (patch.volume ?? t?.volume ?? 0) / 100;
+  }
+};
+
  const removeTrack=id=>{if(sources.current[id]){try{sources.current[id].stop()}catch{}delete sources.current[id]}const el=elements.current[id];if(el){el.pause();el.removeAttribute('src');el.load()}delete nodes.current[id];setTracks(p=>p.filter(t=>t.id!==id))};
  const setMasterVolume=v=>{setMaster(Number(v));setConfig(p=>({...p,master:Number(v)}));if(masterGain.current)masterGain.current.gain.value=Number(v)/100};
  const addFile=file=>{if(!file)return;const src=URL.createObjectURL(file),id=uid();setTracks(p=>[...p,{id,name:file.name,kind:'file',src,volume:50,muted:false,creator:'User supplied',source:'Local upload',license:'Unverified — user must confirm rights',licenseUrl:'',attribution:''}]);setNotice('Local audio added. It is temporary and will need to be re-added after a reload. Verify the usage rights.')};
